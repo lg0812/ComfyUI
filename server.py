@@ -345,13 +345,7 @@ class PromptServer():
             masked = image[0]
             masked = (masked * 255).type(torch.uint8)
             unfiltered_faces = detect_faces(masked, threshold)
-            for face in unfiltered_faces:
-                a, b, c, d = face.bbox
-                h = abs(d - b)
-                w = abs(c - a)
-                if (h <= max_size or w <= max_size) and (min_size <= h or min_size <= w):
-                    faces.append(face)
-            return faces
+            return unfiltered_faces
 
         def face_detect(post):
             image = post.get("image")
