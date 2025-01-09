@@ -17,11 +17,13 @@ import ipaddress
 from PIL import Image, ImageOps
 from PIL.PngImagePlugin import PngInfo
 from io import BytesIO
-
 import aiohttp
 from aiohttp import web
 import logging
-
+import io
+import numpy as np
+import torch
+import cv2
 import mimetypes
 from comfy.cli_args import args
 import comfy.utils
@@ -31,6 +33,7 @@ from app.frontend_management import FrontendManager
 from app.user_manager import UserManager
 from app.model_manager import ModelFileManager
 from typing import Optional
+from face_utils import detect_faces
 from api_server.routes.internal.internal_routes import InternalRoutes
 
 class BinaryEventTypes:
@@ -326,11 +329,59 @@ class PromptServer():
                 return web.json_response({"name" : filename, "subfolder": subfolder, "type": image_upload_type})
             else:
                 return web.Response(status=400)
+                
+        def crop_image(faces, crop_size=512, crop_factor=1.0):
+            crops = []
+            for i, face in enumerate(faces):
+                M, crop = face.crop(crop_size, crop_factor)
+                crop = cv2.cvtColor(crop.squeeze().numpy(), cv2.COLOR_BGR2RGB)
+                crop_image = Image.fromarray((crop * 255).astype(np.uint8))
+                crop_image.save(f"face_crop_{i}.png")
+                crops.append(crop_image)
+            return crops
+
+        def detect_face(image, threshold=0.5, min_size=64, max_size=512):
+            faces = []
+            masked = image[0]
+            masked = (masked * 255).type(torch.uint8)
+            unfiltered_faces = detect_faces(masked, threshold)
+            for face in unfiltered_faces:
+                a, b, c, d = face.bbox
+                h = abs(d - b)
+                w = abs(c - a)
+                if (h <= max_size or w <= max_size) and (min_size <= h or min_size <= w):
+                    faces.append(face)
+            return faces
+
+        def face_detect(post):
+            image = post.get("image")
+            if image and image.file:
+                filename = image.filename
+                if not filename:
+                    return web.Response(status=400)
+                # 读取文件的二进制内容
+                file_content = image.file.read()
+                # 将二进制内容转换为 PIL 图像
+                image = Image.open(io.BytesIO(file_content))
+                
+                if image.mode == 'I':
+                    image = image.point(lambda i: i * (1 / 255))
+                image = image.convert("RGB")
+                image = np.array(image).astype(np.float32) / 255.0
+                image = torch.from_numpy(image)[None,]
+                faces = detect_face(image)
+            length = len(faces)
+            return web.json_response({"number":length})
 
         @routes.post("/upload/image")
         async def upload_image(request):
             post = await request.post()
             return image_upload(post)
+            
+        @routes.post("/facedetect")
+        async def facedetect(request):
+            post = await request.post()
+            return face_detect(post)
 
 
         @routes.post("/upload/mask")
