@@ -1,10 +1,10 @@
 __pycache__/
 *.py[cod]
 /output/
-/input/
+!/input/
 /input/*
 !/input/example.png
-!/input/refs/*
+!/input/refs/
 /models/
 /temp/
 /custom_nodes/
